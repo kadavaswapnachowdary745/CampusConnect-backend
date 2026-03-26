@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fake Payment Flow</title>
+    <style>
+        :root { --bg: #f4f5f7; --card: #ffffff; --primary: #2563eb; --success: #16a34a; --text: #111827; --muted: #6b7280; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Inter, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+        .wrapper { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+        .card { width: 100%; max-width: 500px; background: var(--card); border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,.08); padding: 26px 24px; }
+        h1 { font-size: 1.75rem; margin: 0 0 14px; }
+        p { color: var(--muted); margin-top: 0; }
+        .input-group { margin: 16px 0; }
+        .input-group label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .input-group input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all .2s; }
+        .btn-primary { background: var(--primary); color: white; padding: 11px 14px; }
+        .btn-primary:disabled { opacity: .65; cursor: not-allowed; }
+        .btn-secondary { background: #6b7280; color: white; padding: 11px 14px; margin-left: 10px; }
+        .status { margin-top: 18px; padding: 14px; border-radius: 10px; background: #eef2ff; color: #1e3a8a; }
+        .status.success { background: #dcfce7; color: #166534; }
+        .status.error { background: #fee2e2; color: #991b1b; }
+        .spinner { width: 20px; height: 20px; border: 3px solid #d1d5db; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .footer { margin-top: 15px; color: var(--muted); font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <div class="card">
+        <h1>Buy Now (Fake Payment)</h1>
+        <p>Simulated payment is enabled. No Razorpay/Stripe calls are made.</p>
+
+        <div class="input-group">
+            <label for="productId">Product ID</label>
+            <input id="productId" type="number" min="1" value="1" />
+        </div>
+
+        <button id="buyNowButton" class="btn btn-primary">Buy Now</button>
+
+        <div id="proceedSection" style="display: none; margin-top: 16px;">
+            <button id="proceedButton" class="btn btn-primary">Proceed to Payment</button>
+            <div id="processStatus" class="status" style="display:none;"></div>
+        </div>
+
+        <div id="messageBox" class="status" style="display:none; margin-top: 12px;"></div>
+        <div class="footer">Note: After payment success you will be redirected to confirmation screen.</div>
+    </div>
+</div>
+
+<script>
+    const buyNowButton = document.getElementById('buyNowButton');
+    const proceedSection = document.getElementById('proceedSection');
+    const proceedButton = document.getElementById('proceedButton');
+    const processStatus = document.getElementById('processStatus');
+    const messageBox = document.getElementById('messageBox');
+
+    let currentOrderId = null;
+
+    function setMessage(text, type) {
+        messageBox.textContent = text;
+        messageBox.style.display = 'block';
+        messageBox.className = 'status ' + (type || '');
+    }
+
+    function reset() {
+        proceedSection.style.display = 'none';
+        processStatus.style.display = 'none';
+        messageBox.style.display = 'none';
+        currentOrderId = null;
+    }
+
+    buyNowButton.onclick = () => {
+        setMessage('Buynow selected. Click Proceed to Payment.', '');
+        proceedSection.style.display = 'block';
+        processStatus.style.display = 'none';
+        currentOrderId = null;
+    };
+
+    proceedButton.onclick = async () => {
+        const productId = parseInt(document.getElementById('productId').value, 10);
+        if (!productId || productId < 1) {
+            setMessage('Enter a valid product id to continue.', 'error');
+            return;
+        }
+
+        processStatus.className = 'status';
+        processStatus.style.display = 'flex';
+        processStatus.innerHTML = '<span class="spinner"></span>Creating order...';
+        setMessage('');
+
+        try {
+            const createResponse = await fetch('/api/products/' + productId + '/buy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!createResponse.ok) {
+                const err = await createResponse.json().catch(() => ({ message: 'Unable to create order' }));
+                processStatus.style.display = 'none';
+                setMessage('Order creation failed: ' + (err.message || createResponse.statusText), 'error');
+                return;
+            }
+
+            const createData = await createResponse.json();
+            const orderId = createData.orderId;
+            currentOrderId = orderId;
+
+            processStatus.innerHTML = '<span class="spinner"></span>Processing payment...';
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const payResponse = await fetch('/api/orders/' + orderId + '/pay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!payResponse.ok) {
+                const err = await payResponse.json().catch(() => ({ message: 'Unable to process payment' }));
+                processStatus.style.display = 'none';
+                setMessage('Payment failed: ' + (err.message || payResponse.statusText), 'error');
+                return;
+            }
+
+            processStatus.className = 'status success';
+            processStatus.textContent = 'Payment successful ✅';
+            setMessage('Redirecting to confirmation page...', 'success');
+
+            setTimeout(() => {
+                window.location.href = '/confirmation.html?order=' + encodeURIComponent(orderId) + '&status=PAID';
+            }, 1000);
+
+        } catch (error) {
+            processStatus.style.display = 'none';
+            setMessage('Network error during payment process: ' + error.message, 'error');
+        }
+    };
+</script>
+</body>
+</html>

@@ -1,122 +1,67 @@
 package com.example.CampusConnectMP.service;
 
+import com.example.CampusConnectMP.exception.PaymentProcessingException;
+import com.example.CampusConnectMP.exception.ResourceNotFoundException;
 import com.example.CampusConnectMP.model.Order;
-import com.example.CampusConnectMP.model.PaymentStatus;
+import com.example.CampusConnectMP.model.OrderStatus;
 import com.example.CampusConnectMP.model.Product;
 import com.example.CampusConnectMP.model.User;
 import com.example.CampusConnectMP.repository.OrderRepository;
 import com.example.CampusConnectMP.repository.ProductRepository;
 import com.example.CampusConnectMP.repository.UserRepository;
-import com.razorpay.RazorpayClient;
-import com.razorpay.Utils;
-import lombok.RequiredArgsConstructor;
-import org.json.JSONObject;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
+@Slf4j
 public class PaymentService {
 
-    private final RazorpayClient razorpayClient;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
 
-    @Value("${razorpay.key-id}")
-    private String razorpayKeyId;
-
-    @Value("${razorpay.key-secret}")
-    private String razorpayKeySecret;
-
-    @Value("${razorpay.currency:INR}")
-    private String currency;
-
-    public Map<String, Object> createOrder(Long productId, String buyerEmail) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-
-        if (product.isSold()) {
-            throw new RuntimeException("Product already sold");
-        }
-
-        User buyer = userRepository.findByEmail(buyerEmail)
-                .orElseThrow(() -> new RuntimeException("Buyer not found"));
-
-        if (product.getSeller().getId().equals(buyer.getId())) {
-            throw new RuntimeException("Seller cannot buy their own product");
-        }
-
-        long amountInPaise = Math.round(product.getPrice() * 100);
-
-        JSONObject orderRequest = new JSONObject();
-        orderRequest.put("amount", amountInPaise);
-        orderRequest.put("currency", currency);
-        orderRequest.put("receipt", "order_rcptid_" + productId);
-        orderRequest.put("payment_capture", 1);
-
-        com.razorpay.Order razorpayOrder;
-        try {
-            razorpayOrder = razorpayClient.orders.create(orderRequest);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create Razorpay order", e);
-        }
-
-        Order order = Order.builder()
-                .productId(productId)
-                .buyerId(buyer.getId())
-                .sellerId(product.getSeller().getId())
-                .amount(product.getPrice())
-                .paymentStatus(PaymentStatus.PENDING)
-                .razorpayOrderId(razorpayOrder.get("id"))
-                .build();
-
-        orderRepository.save(order);
-
-        return Map.of(
-                "orderId", razorpayOrder.get("id"),
-                "amount", amountInPaise,
-                "currency", currency,
-                "keyId", razorpayKeyId
-        );
+    @Autowired
+    public PaymentService(OrderRepository orderRepository,
+                          ProductRepository productRepository,
+                          UserRepository userRepository) {
+        this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
+        this.userRepository = userRepository;
     }
 
+    @Value("${payment.currency:INR}")
+    private String currency;
+
+    @Transactional
+    public Map<String, Object> createOrder(Long productId, String buyerEmail) {
+        return startFakeOrder(productId, buyerEmail);
+    }
+
+    @Transactional
     public void verifyPayment(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
-        Order order = orderRepository.findByRazorpayOrderId(razorpayOrderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+        throw new PaymentProcessingException("Razorpay payment verification is disabled. Use fake payment endpoints.");
+    }
 
-        JSONObject options = new JSONObject();
-        options.put("razorpay_order_id", razorpayOrderId);
-        options.put("razorpay_payment_id", razorpayPaymentId);
-        options.put("razorpay_signature", razorpaySignature);
-
-        try {
-            Utils.verifyPaymentSignature(options, razorpayKeySecret);
-        } catch (Exception e) {
-            order.setPaymentStatus(PaymentStatus.FAILED);
-            orderRepository.save(order);
-            throw new RuntimeException("Invalid payment signature");
-        }
-
-        order.setPaymentStatus(PaymentStatus.SUCCESS);
-        order.setRazorpayPaymentId(razorpayPaymentId);
-        orderRepository.save(order);
-
-        Product product = productRepository.findById(order.getProductId())
-                .orElseThrow(() -> new RuntimeException("Product not found"));
-        product.setSold(true);
-        product.setBuyer(userRepository.findById(order.getBuyerId()).orElse(null));
-        productRepository.save(product);
+    @Transactional
+    public Map<String, Object> handleWebhook(String payload, String signatureHeader) {
+        throw new PaymentProcessingException("Webhook handling is disabled in mock payment mode.");
     }
 
     public List<Map<String, Object>> getUserOrders(String userEmail) {
         User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         return orderRepository.findByBuyerId(user.getId()).stream()
                 .map(order -> {
@@ -125,12 +70,128 @@ public class PaymentService {
                     orderMap.put("id", order.getId());
                     orderMap.put("productTitle", product != null ? product.getTitle() : "Unknown");
                     orderMap.put("amount", order.getAmount());
-                    orderMap.put("paymentStatus", order.getPaymentStatus().toString());
+                    orderMap.put("status", order.getStatus().toString());
+                    orderMap.put("paymentDate", order.getPaymentDate());
                     orderMap.put("createdAt", order.getCreatedAt());
                     orderMap.put("razorpayOrderId", order.getRazorpayOrderId());
                     orderMap.put("razorpayPaymentId", order.getRazorpayPaymentId());
+                    orderMap.put("buyerId", order.getBuyerId());
+                    orderMap.put("sellerId", order.getSellerId());
                     return orderMap;
                 })
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public Map<String, Object> startFakeOrder(Long productId, String buyerEmail) {
+        if (productId == null || productId <= 0) {
+            throw new PaymentProcessingException("Invalid productId");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+
+        if (product.isSold()) {
+            throw new PaymentProcessingException("Product already sold");
+        }
+
+        User buyer;
+        if (buyerEmail == null || buyerEmail.isBlank()) {
+            buyer = findOrCreateGuest();
+        } else {
+            buyer = userRepository.findByEmail(buyerEmail).orElseGet(this::findOrCreateGuest);
+        }
+
+        if (buyer.getId().equals(product.getSeller().getId())) {
+            throw new PaymentProcessingException("Seller cannot buy their own product");
+        }
+
+        long amountInPaise = Math.round(product.getPrice() * 100);
+
+        Order order = Order.builder()
+                .productId(productId)
+                .buyerId(buyer.getId())
+                .sellerId(product.getSeller().getId())
+                .amount(product.getPrice())
+                .status(OrderStatus.PENDING)
+                .razorpayOrderId("fake_" + UUID.randomUUID())
+                .build();
+
+        orderRepository.save(order);
+
+        return Map.of(
+                "orderId", order.getId(),
+                "amount", amountInPaise,
+                "currency", currency,
+                "status", "PENDING",
+                "message", "Order created. Call /api/orders/{orderId}/pay to complete payment"
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> confirmFakePayment(Long orderId, String buyerEmail) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        User requester;
+        if (buyerEmail == null || buyerEmail.isBlank()) {
+            requester = findOrCreateGuest();
+        } else {
+            requester = userRepository.findByEmail(buyerEmail)
+                    .orElseThrow(() -> new ResourceNotFoundException("Buyer not found"));
+        }
+
+        if (!order.getBuyerId().equals(requester.getId())) {
+            throw new PaymentProcessingException("Unauthorized fake payment confirmation");
+        }
+
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new PaymentProcessingException("Order cannot be confirmed in status " + order.getStatus());
+        }
+
+        order.setStatus(OrderStatus.PAID);
+        order.setPaymentDate(LocalDateTime.now());
+        orderRepository.save(order);
+
+        Product product = productRepository.findById(order.getProductId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        product.setSold(true);
+        product.setBuyer(userRepository.findById(order.getBuyerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Buyer not found")));
+        productRepository.save(product);
+
+        return Map.of(
+                "orderId", order.getId(),
+                "status", "PAID",
+                "message", "Payment successful ✅"
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> fakeBuyNow(Long productId, String buyerEmail) {
+        Map<String, Object> startResult = startFakeOrder(productId, buyerEmail);
+        Long orderId = ((Number) startResult.get("orderId")).longValue();
+        Map<String, Object> confirmResult = confirmFakePayment(orderId, buyerEmail);
+
+        return Map.of(
+                "start", startResult,
+                "confirm", confirmResult,
+                "status", "PAID",
+                "message", "Fake payment flow completed"
+        );
+    }
+
+    private User findOrCreateGuest() {
+        String guestEmail = "guest@demo.com";
+        return userRepository.findByEmail(guestEmail)
+                .orElseGet(() -> {
+                    User guest = User.builder()
+                            .email(guestEmail)
+                            .name("Guest User")
+                            .password("")
+                            .blocked(false)
+                            .build();
+                    return userRepository.save(guest);
+                });
     }
 }

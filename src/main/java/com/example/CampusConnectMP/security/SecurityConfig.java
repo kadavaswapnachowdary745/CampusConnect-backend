@@ -42,6 +42,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/payments/webhook").permitAll()
+                        .requestMatchers("/api/payments/fake/**").permitAll()
+                        .requestMatchers("/api/products/*/buy/fake").permitAll()
                         .requestMatchers("/ws/**").permitAll() // WebSocket endpoint
                         .requestMatchers("/uploads/**").permitAll() // Serve static images
                         .anyRequest().authenticated()

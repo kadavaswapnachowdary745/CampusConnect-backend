@@ -102,12 +102,7 @@
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 
-		<!-- Razorpay SDK for payment orders -->
-		<dependency>
-			<groupId>com.razorpay</groupId>
-			<artifactId>razorpay-java</artifactId>
-			<version>1.4.8</version>
-		</dependency>
+		<!-- Razorpay SDK removed - using mock payment processing -->
 	</dependencies>
 
 	<build>

@@ -3,14 +3,17 @@ package com.example.CampusConnectMP.controller;
 import com.example.CampusConnectMP.controller.dto.ProductRequest;
 import com.example.CampusConnectMP.controller.dto.ProductResponse;
 import com.example.CampusConnectMP.model.Category;
+import com.example.CampusConnectMP.service.PaymentService;
 import com.example.CampusConnectMP.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/products")
@@ -18,6 +21,7 @@ import java.util.List;
 public class ProductController {
 
     private final ProductService productService;
+    private final PaymentService paymentService;
 
     @PostMapping
     public ResponseEntity<ProductResponse> addProduct(
@@ -64,8 +68,16 @@ public class ProductController {
     }
 
     @PostMapping("/{id}/buy")
-    public ResponseEntity<ProductResponse> buyProduct(@PathVariable Long id, Authentication authentication) {
-        String userEmail = authentication.getName();
-        return ResponseEntity.ok(productService.buyProduct(id, userEmail));
+    public ResponseEntity<Map<String, Object>> buyProduct(@PathVariable Long id, @Nullable Authentication authentication) {
+        String userEmail = authentication != null ? authentication.getName() : null;
+        Map<String, Object> result = paymentService.createOrder(id, userEmail);
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/{id}/buy/fake")
+    public ResponseEntity<Map<String, Object>> buyProductFake(@PathVariable Long id, @Nullable Authentication authentication) {
+        String userEmail = authentication != null ? authentication.getName() : null;
+        Map<String, Object> result = paymentService.fakeBuyNow(id, userEmail);
+        return ResponseEntity.ok(result);
     }
 }

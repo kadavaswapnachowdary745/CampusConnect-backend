@@ -38,8 +38,10 @@ public class Order {
     private String razorpayPaymentId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private PaymentStatus paymentStatus;
+    @Column(nullable = true)
+    private OrderStatus status = OrderStatus.PENDING;
+
+    private LocalDateTime paymentDate;
 
     @CreationTimestamp
     @Column(updatable = false)

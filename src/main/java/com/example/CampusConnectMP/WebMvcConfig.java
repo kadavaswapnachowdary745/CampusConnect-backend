@@ -2,14 +2,21 @@ package com.example.CampusConnectMP;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.logging.Logger;
 
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    private static final Logger logger = Logger.getLogger(WebMvcConfig.class.getName());
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -21,5 +28,21 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations("file:" + uploadAbsolutePath + "/");
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new LoggingInterceptor());
+    }
+
+    private static class LoggingInterceptor extends HandlerInterceptorAdapter {
+        @Override
+        public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+            logger.info(String.format("Incoming request: %s %s from %s",
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr()));
+            return true;
+        }
     }
 }

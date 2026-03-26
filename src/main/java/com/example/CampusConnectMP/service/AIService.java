@@ -17,7 +17,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 @Slf4j
 public class AIService {
 
-    @Value("${HUGGINGFACE_API_KEY:}")
+    @Value("${huggingface.api.key}")
     private String apiKey;
 
     private final RestTemplate restTemplate = new RestTemplate();

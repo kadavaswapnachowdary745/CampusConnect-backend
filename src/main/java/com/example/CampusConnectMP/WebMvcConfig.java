@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
+import org.springframework.web.servlet.HandlerInterceptor;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -35,7 +35,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(new LoggingInterceptor());
     }
 
-    private static class LoggingInterceptor extends HandlerInterceptorAdapter {
+    private static class LoggingInterceptor implements HandlerInterceptor {
         @Override
         public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
             logger.info(String.format("Incoming request: %s %s from %s",
@@ -43,6 +43,18 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 request.getRequestURI(),
                 request.getRemoteAddr()));
             return true;
+        }
+
+        @Override
+        public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, 
+                              org.springframework.web.servlet.ModelAndView modelAndView) throws Exception {
+            // No-op
+        }
+
+        @Override
+        public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, 
+                                   Exception ex) throws Exception {
+            // No-op
         }
     }
 }
